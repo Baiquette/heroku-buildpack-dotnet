@@ -37,7 +37,15 @@ initialize_environment() {
 	export CNB_TARGET_ARCH="${arch}"
 	export CNB_TARGET_DISTRO_NAME="ubuntu"
 	# shellcheck disable=SC2154 # TODO: Env var is referenced but not assigned.
-	export CNB_TARGET_DISTRO_VERSION="${STACK/heroku-/}.04"
+	# Support both Heroku and Scalingo stack naming conventions
+	if [[ "${STACK}" =~ ^heroku- ]]; then
+		export CNB_TARGET_DISTRO_VERSION="${STACK/heroku-/}.04"
+	elif [[ "${STACK}" =~ ^scalingo- ]]; then
+		export CNB_TARGET_DISTRO_VERSION="${STACK/scalingo-/}.04"
+	else
+		# Default to 22.04 for unknown stacks
+		export CNB_TARGET_DISTRO_VERSION="22.04"
+	fi
 
 	cd "${BUILD_DIR}"
 }
