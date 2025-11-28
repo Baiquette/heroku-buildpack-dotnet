@@ -176,7 +176,16 @@ process_env_files() {
 	done
 }
 
+initialize_git_submodules() {
+	if [ -f "${BUILD_DIR}/.gitmodules" ]; then
+		echo "-----> Initializing git submodules"
+		cd "${BUILD_DIR}"
+		git submodule update --init --recursive
+	fi
+}
+
 initialize_environment
+initialize_git_submodules
 download_and_extract_cnb
 run_build
 remove_non_launch_layers
