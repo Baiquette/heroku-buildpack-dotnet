@@ -219,10 +219,15 @@ initialize_git_submodules() {
 			if [ -n "${current_path}" ] && [ -n "${current_url}" ]; then
 				local target_dir="${repo_root}/${current_path}"
 				echo "       Cloning ${current_url} into ${current_path}"
+				echo "       Target directory: ${target_dir}"
 
-				if [ -d "${target_dir}" ]; then
-					echo "       Submodule ${current_path} already exists, skipping"
+				# Check if directory exists and is not empty
+				if [ -d "${target_dir}" ] && [ -n "$(ls -A "${target_dir}" 2>/dev/null)" ]; then
+					echo "       Submodule ${current_path} already exists and is populated, skipping"
 				else
+					# Remove empty directory if it exists
+					[ -d "${target_dir}" ] && rm -rf "${target_dir}"
+
 					local clone_opts=""
 					[ -n "${current_branch}" ] && clone_opts="--branch ${current_branch}"
 
@@ -230,6 +235,7 @@ initialize_git_submodules() {
 						echo "       Successfully cloned ${current_path}"
 					else
 						echo " !     WARNING: Failed to clone ${current_path} from ${current_url}"
+						echo " !     This might be due to SSH authentication or network issues"
 					fi
 				fi
 			fi
@@ -257,10 +263,15 @@ initialize_git_submodules() {
 	if [ -n "${current_path}" ] && [ -n "${current_url}" ]; then
 		local target_dir="${repo_root}/${current_path}"
 		echo "       Cloning ${current_url} into ${current_path}"
+		echo "       Target directory: ${target_dir}"
 
-		if [ -d "${target_dir}" ]; then
-			echo "       Submodule ${current_path} already exists, skipping"
+		# Check if directory exists and is not empty
+		if [ -d "${target_dir}" ] && [ -n "$(ls -A "${target_dir}" 2>/dev/null)" ]; then
+			echo "       Submodule ${current_path} already exists and is populated, skipping"
 		else
+			# Remove empty directory if it exists
+			[ -d "${target_dir}" ] && rm -rf "${target_dir}"
+
 			local clone_opts=""
 			[ -n "${current_branch}" ] && clone_opts="--branch ${current_branch}"
 
@@ -268,6 +279,7 @@ initialize_git_submodules() {
 				echo "       Successfully cloned ${current_path}"
 			else
 				echo " !     WARNING: Failed to clone ${current_path} from ${current_url}"
+				echo " !     This might be due to SSH authentication or network issues"
 			fi
 		fi
 	fi
