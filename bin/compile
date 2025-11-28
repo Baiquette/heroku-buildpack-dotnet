@@ -177,11 +177,30 @@ process_env_files() {
 }
 
 initialize_git_submodules() {
-	if [ -f "${BUILD_DIR}/.gitmodules" ]; then
-		echo "-----> Initializing git submodules"
-		cd "${BUILD_DIR}"
-		git submodule update --init --recursive
+	local git_dir="${BUILD_DIR}"
+	local working_dir="${BUILD_DIR}"
+
+	# Check if .git exists in BUILD_DIR, otherwise check parent directory (for monorepo with PROJECT_DIR)
+	if [ ! -d "${BUILD_DIR}/.git" ] && [ -d "${BUILD_DIR}/../.git" ]; then
+		echo "-----> Detected monorepo structure (PROJECT_DIR in use)"
+		git_dir="${BUILD_DIR}/.."
 	fi
+
+	if [ ! -f "${git_dir}/.gitmodules" ]; then
+		echo "-----> No git submodules found, skipping"
+		return 0
+	fi
+
+	echo "-----> Initializing git submodules"
+	cd "${git_dir}"
+
+	if git submodule update --init --recursive; then
+		echo "-----> Git submodules initialized successfully"
+	else
+		echo " !     WARNING: Failed to initialize git submodules"
+	fi
+
+	cd "${working_dir}"
 }
 
 initialize_environment
