@@ -302,30 +302,33 @@ fix_multiple_propertygroups() {
 
 			# Remove PropertyGroups that have Condition attribute (and their contents)
 			awk '
-			BEGIN { in_conditional_pg = 0; skip_depth = 0 }
+			BEGIN { in_conditional_pg = 0 }
+			# Start of conditional PropertyGroup
 			/<PropertyGroup[^>]*Condition=/ {
 				in_conditional_pg = 1
-				skip_depth = 1
 				next
 			}
+			# End of PropertyGroup while in conditional mode
+			/<\/PropertyGroup>/ {
+				if (in_conditional_pg) {
+					in_conditional_pg = 0
+					next
+				}
+			}
+			# Skip all lines inside conditional PropertyGroup
 			in_conditional_pg {
-				if (/<PropertyGroup/) {
-					skip_depth++
-				}
-				if (/<\/PropertyGroup>/) {
-					skip_depth--
-					if (skip_depth == 0) {
-						in_conditional_pg = 0
-					}
-				}
 				next
 			}
+			# Print all other lines
 			{
 				print
 			}
 			' "${project_file}.backup" > "${project_file}"
 
 			echo "       Removed conditional PropertyGroups from $(basename "${project_file}")"
+			echo "       --- First 40 lines after removal: ---"
+			head -n 40 "${project_file}"
+			echo "       --- End ---"
 		fi
 	done
 }
