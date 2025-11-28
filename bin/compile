@@ -180,18 +180,26 @@ initialize_git_submodules() {
 	local git_dir="${BUILD_DIR}"
 	local working_dir="${BUILD_DIR}"
 
+	echo "-----> Checking for git submodules"
+	echo "       BUILD_DIR: ${BUILD_DIR}"
+	echo "       Checking ${BUILD_DIR}/.git: $([ -d "${BUILD_DIR}/.git" ] && echo "EXISTS" || echo "NOT FOUND")"
+	echo "       Checking ${BUILD_DIR}/../.git: $([ -d "${BUILD_DIR}/../.git" ] && echo "EXISTS" || echo "NOT FOUND")"
+
 	# Check if .git exists in BUILD_DIR, otherwise check parent directory (for monorepo with PROJECT_DIR)
 	if [ ! -d "${BUILD_DIR}/.git" ] && [ -d "${BUILD_DIR}/../.git" ]; then
-		echo "-----> Detected monorepo structure (PROJECT_DIR in use)"
+		echo "       Detected monorepo structure (PROJECT_DIR in use)"
 		git_dir="${BUILD_DIR}/.."
 	fi
+
+	echo "       Using git_dir: ${git_dir}"
+	echo "       Checking ${git_dir}/.gitmodules: $([ -f "${git_dir}/.gitmodules" ] && echo "EXISTS" || echo "NOT FOUND")"
 
 	if [ ! -f "${git_dir}/.gitmodules" ]; then
 		echo "-----> No git submodules found, skipping"
 		return 0
 	fi
 
-	echo "-----> Initializing git submodules"
+	echo "-----> Initializing git submodules from ${git_dir}"
 	cd "${git_dir}"
 
 	if git submodule update --init --recursive; then
