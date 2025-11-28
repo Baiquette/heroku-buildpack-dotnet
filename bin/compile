@@ -308,18 +308,15 @@ fix_multiple_propertygroups() {
 				in_conditional_pg = 1
 				next
 			}
-			# End of PropertyGroup while in conditional mode
-			/<\/PropertyGroup>/ {
-				if (in_conditional_pg) {
-					in_conditional_pg = 0
-					next
-				}
-			}
 			# Skip all lines inside conditional PropertyGroup
 			in_conditional_pg {
+				# Check if this is the closing tag
+				if (/<\/PropertyGroup>/) {
+					in_conditional_pg = 0
+				}
 				next
 			}
-			# Print all other lines
+			# Print all other lines (including non-conditional </PropertyGroup>)
 			{
 				print
 			}
