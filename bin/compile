@@ -302,16 +302,25 @@ fix_multiple_propertygroups() {
 
 			# Remove PropertyGroups that have Condition attribute (and their contents)
 			awk '
-			BEGIN { in_conditional_pg = 0 }
+			BEGIN { in_conditional_pg = 0; skip_depth = 0 }
 			/<PropertyGroup[^>]*Condition=/ {
 				in_conditional_pg = 1
+				skip_depth = 1
 				next
 			}
-			in_conditional_pg && /<\/PropertyGroup>/ {
-				in_conditional_pg = 0
+			in_conditional_pg {
+				if (/<PropertyGroup/) {
+					skip_depth++
+				}
+				if (/<\/PropertyGroup>/) {
+					skip_depth--
+					if (skip_depth == 0) {
+						in_conditional_pg = 0
+					}
+				}
 				next
 			}
-			!in_conditional_pg {
+			{
 				print
 			}
 			' "${project_file}.backup" > "${project_file}"
