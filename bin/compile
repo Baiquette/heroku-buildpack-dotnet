@@ -177,37 +177,102 @@ process_env_files() {
 }
 
 initialize_git_submodules() {
-	local git_dir="${BUILD_DIR}"
+	local repo_root="${BUILD_DIR}"
 	local working_dir="${BUILD_DIR}"
 
 	echo "-----> Checking for git submodules"
-	echo "       BUILD_DIR: ${BUILD_DIR}"
-	echo "       Checking ${BUILD_DIR}/.git: $([ -d "${BUILD_DIR}/.git" ] && echo "EXISTS" || echo "NOT FOUND")"
-	echo "       Checking ${BUILD_DIR}/../.git: $([ -d "${BUILD_DIR}/../.git" ] && echo "EXISTS" || echo "NOT FOUND")"
 
-	# Check if .git exists in BUILD_DIR, otherwise check parent directory (for monorepo with PROJECT_DIR)
-	if [ ! -d "${BUILD_DIR}/.git" ] && [ -d "${BUILD_DIR}/../.git" ]; then
+	# Check for .gitmodules in BUILD_DIR or parent directory (for monorepo with PROJECT_DIR)
+	local gitmodules_file=""
+	if [ -f "${BUILD_DIR}/.gitmodules" ]; then
+		gitmodules_file="${BUILD_DIR}/.gitmodules"
+		repo_root="${BUILD_DIR}"
+	elif [ -f "${BUILD_DIR}/../.gitmodules" ]; then
 		echo "       Detected monorepo structure (PROJECT_DIR in use)"
-		git_dir="${BUILD_DIR}/.."
+		gitmodules_file="${BUILD_DIR}/../.gitmodules"
+		repo_root="${BUILD_DIR}/.."
 	fi
 
-	echo "       Using git_dir: ${git_dir}"
-	echo "       Checking ${git_dir}/.gitmodules: $([ -f "${git_dir}/.gitmodules" ] && echo "EXISTS" || echo "NOT FOUND")"
-
-	if [ ! -f "${git_dir}/.gitmodules" ]; then
-		echo "-----> No git submodules found, skipping"
+	if [ -z "${gitmodules_file}" ]; then
+		echo "       No .gitmodules file found, skipping"
 		return 0
 	fi
 
-	echo "-----> Initializing git submodules from ${git_dir}"
-	cd "${git_dir}"
+	echo "       Found .gitmodules at: ${gitmodules_file}"
+	echo "-----> Cloning git submodules"
 
-	if git submodule update --init --recursive; then
-		echo "-----> Git submodules initialized successfully"
-	else
-		echo " !     WARNING: Failed to initialize git submodules"
+	# Parse .gitmodules and clone each submodule manually
+	local current_path=""
+	local current_url=""
+	local current_branch=""
+
+	while IFS= read -r line; do
+		# Remove leading/trailing whitespace
+		line=$(echo "${line}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+		# Skip empty lines and comments
+		[[ -z "${line}" || "${line}" =~ ^# ]] && continue
+
+		# New submodule section
+		if [[ "${line}" =~ ^\[submodule ]]; then
+			# Clone previous submodule if we have the required info
+			if [ -n "${current_path}" ] && [ -n "${current_url}" ]; then
+				local target_dir="${repo_root}/${current_path}"
+				echo "       Cloning ${current_url} into ${current_path}"
+
+				if [ -d "${target_dir}" ]; then
+					echo "       Submodule ${current_path} already exists, skipping"
+				else
+					local clone_opts=""
+					[ -n "${current_branch}" ] && clone_opts="--branch ${current_branch}"
+
+					if git clone ${clone_opts} --depth 1 "${current_url}" "${target_dir}"; then
+						echo "       Successfully cloned ${current_path}"
+					else
+						echo " !     WARNING: Failed to clone ${current_path} from ${current_url}"
+					fi
+				fi
+			fi
+
+			# Reset for next submodule
+			current_path=""
+			current_url=""
+			current_branch=""
+
+		# Parse path
+		elif [[ "${line}" =~ ^path[[:space:]]*=[[:space:]]*(.*) ]]; then
+			current_path="${BASH_REMATCH[1]}"
+
+		# Parse url
+		elif [[ "${line}" =~ ^url[[:space:]]*=[[:space:]]*(.*) ]]; then
+			current_url="${BASH_REMATCH[1]}"
+
+		# Parse branch
+		elif [[ "${line}" =~ ^branch[[:space:]]*=[[:space:]]*(.*) ]]; then
+			current_branch="${BASH_REMATCH[1]}"
+		fi
+	done < "${gitmodules_file}"
+
+	# Clone the last submodule
+	if [ -n "${current_path}" ] && [ -n "${current_url}" ]; then
+		local target_dir="${repo_root}/${current_path}"
+		echo "       Cloning ${current_url} into ${current_path}"
+
+		if [ -d "${target_dir}" ]; then
+			echo "       Submodule ${current_path} already exists, skipping"
+		else
+			local clone_opts=""
+			[ -n "${current_branch}" ] && clone_opts="--branch ${current_branch}"
+
+			if git clone ${clone_opts} --depth 1 "${current_url}" "${target_dir}"; then
+				echo "       Successfully cloned ${current_path}"
+			else
+				echo " !     WARNING: Failed to clone ${current_path} from ${current_url}"
+			fi
+		fi
 	fi
 
+	echo "-----> Git submodules initialized successfully"
 	cd "${working_dir}"
 }
 
