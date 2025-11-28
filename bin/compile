@@ -37,7 +37,15 @@ initialize_environment() {
 	export CNB_TARGET_ARCH="${arch}"
 	export CNB_TARGET_DISTRO_NAME="ubuntu"
 	# shellcheck disable=SC2154 # TODO: Env var is referenced but not assigned.
-	export CNB_TARGET_DISTRO_VERSION="${STACK/heroku-/}.04"
+	# Support both Heroku and Scalingo stack naming conventions
+	if [[ "${STACK}" =~ ^heroku- ]]; then
+		export CNB_TARGET_DISTRO_VERSION="${STACK/heroku-/}.04"
+	elif [[ "${STACK}" =~ ^scalingo- ]]; then
+		export CNB_TARGET_DISTRO_VERSION="${STACK/scalingo-/}.04"
+	else
+		# Default to 22.04 for unknown stacks
+		export CNB_TARGET_DISTRO_VERSION="22.04"
+	fi
 
 	cd "${BUILD_DIR}"
 }
@@ -168,7 +176,142 @@ process_env_files() {
 	done
 }
 
+initialize_git_submodules() {
+	local repo_root="${BUILD_DIR}"
+	local working_dir="${BUILD_DIR}"
+
+	# Check for .gitmodules in BUILD_DIR or parent directory (for monorepo with PROJECT_DIR)
+	local gitmodules_file=""
+	if [ -f "${BUILD_DIR}/.gitmodules" ]; then
+		gitmodules_file="${BUILD_DIR}/.gitmodules"
+		repo_root="${BUILD_DIR}"
+	elif [ -f "${BUILD_DIR}/../.gitmodules" ]; then
+		gitmodules_file="${BUILD_DIR}/../.gitmodules"
+		repo_root="${BUILD_DIR}/.."
+	fi
+
+	if [ -z "${gitmodules_file}" ]; then
+		return 0
+	fi
+
+	echo "-----> Cloning git submodules"
+
+	# Parse .gitmodules and clone each submodule manually
+	local current_path=""
+	local current_url=""
+	local current_branch=""
+
+	while IFS= read -r line; do
+		# Remove leading/trailing whitespace
+		line=$(echo "${line}" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+
+		# Skip empty lines and comments
+		[[ -z "${line}" || "${line}" =~ ^# ]] && continue
+
+		# New submodule section
+		if [[ "${line}" =~ ^\[submodule ]]; then
+			# Clone previous submodule if we have the required info
+			if [ -n "${current_path}" ] && [ -n "${current_url}" ]; then
+				local target_dir="${repo_root}/${current_path}"
+
+				# Check if directory exists and is not empty
+				if [ -d "${target_dir}" ] && [ -n "$(ls -A "${target_dir}" 2>/dev/null)" ]; then
+					echo "       ${current_path} (already exists)"
+				else
+					# Remove empty directory if it exists
+					[ -d "${target_dir}" ] && rm -rf "${target_dir}"
+
+					local clone_opts=""
+					[ -n "${current_branch}" ] && clone_opts="--branch ${current_branch}"
+
+					if git clone ${clone_opts} --depth 1 "${current_url}" "${target_dir}" > /dev/null 2>&1; then
+						echo "       ${current_path}"
+					else
+						echo " !     Failed to clone ${current_path}"
+					fi
+				fi
+			fi
+
+			# Reset for next submodule
+			current_path=""
+			current_url=""
+			current_branch=""
+
+		# Parse path
+		elif [[ "${line}" =~ ^path[[:space:]]*=[[:space:]]*(.*) ]]; then
+			current_path="${BASH_REMATCH[1]}"
+
+		# Parse url
+		elif [[ "${line}" =~ ^url[[:space:]]*=[[:space:]]*(.*) ]]; then
+			current_url="${BASH_REMATCH[1]}"
+
+		# Parse branch
+		elif [[ "${line}" =~ ^branch[[:space:]]*=[[:space:]]*(.*) ]]; then
+			current_branch="${BASH_REMATCH[1]}"
+		fi
+	done < "${gitmodules_file}"
+
+	# Clone the last submodule
+	if [ -n "${current_path}" ] && [ -n "${current_url}" ]; then
+		local target_dir="${repo_root}/${current_path}"
+
+		# Check if directory exists and is not empty
+		if [ -d "${target_dir}" ] && [ -n "$(ls -A "${target_dir}" 2>/dev/null)" ]; then
+			echo "       ${current_path} (already exists)"
+		else
+			# Remove empty directory if it exists
+			[ -d "${target_dir}" ] && rm -rf "${target_dir}"
+
+			local clone_opts=""
+			[ -n "${current_branch}" ] && clone_opts="--branch ${current_branch}"
+
+			if git clone ${clone_opts} --depth 1 "${current_url}" "${target_dir}" > /dev/null 2>&1; then
+				echo "       ${current_path}"
+			else
+				echo " !     Failed to clone ${current_path}"
+			fi
+		fi
+	fi
+
+	cd "${working_dir}"
+}
+
+fix_multiple_propertygroups() {
+	echo "-----> Removing conditional PropertyGroup elements"
+
+	# Find all .csproj, .fsproj, and .vbproj files
+	find "${BUILD_DIR}" -type f \( -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" \) | while read -r project_file; do
+		# Check if file has PropertyGroups with Condition attributes
+		if grep -q '<PropertyGroup.*Condition=' "${project_file}"; then
+			# Create backup
+			cp "${project_file}" "${project_file}.backup"
+
+			# Remove PropertyGroups that have Condition attribute (and their contents)
+			awk '
+			BEGIN { in_conditional_pg = 0 }
+			/<PropertyGroup[^>]*Condition=/ {
+				in_conditional_pg = 1
+				next
+			}
+			in_conditional_pg {
+				if (/<\/PropertyGroup>/) {
+					in_conditional_pg = 0
+				}
+				next
+			}
+			{
+				print
+			}
+			' "${project_file}.backup" > "${project_file}"
+
+			echo "       $(basename "${project_file}")"
+		fi
+	done
+}
+
 initialize_environment
+initialize_git_submodules
+fix_multiple_propertygroups
 download_and_extract_cnb
 run_build
 remove_non_launch_layers
