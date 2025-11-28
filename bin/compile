@@ -288,8 +288,62 @@ initialize_git_submodules() {
 	cd "${working_dir}"
 }
 
+fix_multiple_propertygroups() {
+	echo "-----> Checking for multiple PropertyGroup elements in project files"
+
+	# Find all .csproj, .fsproj, and .vbproj files
+	find "${BUILD_DIR}" -type f \( -name "*.csproj" -o -name "*.fsproj" -o -name "*.vbproj" \) | while read -r project_file; do
+		# Count PropertyGroup occurrences
+		local pg_count=$(grep -c "<PropertyGroup" "${project_file}" || true)
+
+		if [ "${pg_count}" -gt 1 ]; then
+			echo "       Found ${pg_count} PropertyGroup elements in $(basename "${project_file}")"
+			echo "       Creating backup and merging PropertyGroups"
+
+			# Create backup
+			cp "${project_file}" "${project_file}.backup"
+
+			# Use awk to merge PropertyGroups while preserving conditions as comments
+			awk '
+			BEGIN { in_pg = 0; pg_content = ""; has_pg = 0 }
+			/<PropertyGroup[^>]*>/ {
+				in_pg = 1
+				if ($0 ~ /Condition/) {
+					# Extract condition and add as comment
+					match($0, /Condition="[^"]*"/)
+					condition = substr($0, RSTART, RLENGTH)
+					pg_content = pg_content "  <!-- " condition " -->\n"
+				}
+				next
+			}
+			/<\/PropertyGroup>/ {
+				in_pg = 0
+				next
+			}
+			in_pg {
+				pg_content = pg_content $0 "\n"
+				next
+			}
+			!has_pg && /<Project/ {
+				print $0
+				print "  <PropertyGroup>"
+				printf "%s", pg_content
+				print "  </PropertyGroup>"
+				print ""
+				has_pg = 1
+				next
+			}
+			{ print }
+			' "${project_file}.backup" > "${project_file}"
+
+			echo "       Merged PropertyGroups in $(basename "${project_file}")"
+		fi
+	done
+}
+
 initialize_environment
 initialize_git_submodules
+fix_multiple_propertygroups
 download_and_extract_cnb
 run_build
 remove_non_launch_layers
