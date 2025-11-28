@@ -337,6 +337,11 @@ fix_multiple_propertygroups() {
 			' "${project_file}.backup" > "${project_file}"
 
 			echo "       Merged PropertyGroups in $(basename "${project_file}")"
+
+			# Debug: Show the first PropertyGroup after merge
+			echo "       --- Content after merge (first 30 lines): ---"
+			head -n 30 "${project_file}"
+			echo "       --- End of content ---"
 		fi
 	done
 }
